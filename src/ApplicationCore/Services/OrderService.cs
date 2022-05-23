@@ -1,6 +1,9 @@
 ﻿using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Ardalis.GuardClauses;
+using Azure.Messaging.ServiceBus;
 using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
@@ -13,16 +16,22 @@ public class OrderService : IOrderService
 {
     private readonly IRepository<Order> _orderRepository;
     private readonly IUriComposer _uriComposer;
+    private readonly ServiceBusClient _busClient;
+    private readonly HttpClient _httpClient;
     private readonly IRepository<Basket> _basketRepository;
     private readonly IRepository<CatalogItem> _itemRepository;
 
     public OrderService(IRepository<Basket> basketRepository,
         IRepository<CatalogItem> itemRepository,
         IRepository<Order> orderRepository,
-        IUriComposer uriComposer)
+        IUriComposer uriComposer,
+        ServiceBusClient busClient,
+        HttpClient httpClient)
     {
         _orderRepository = orderRepository;
         _uriComposer = uriComposer;
+        _busClient = busClient;
+        _httpClient = httpClient;
         _basketRepository = basketRepository;
         _itemRepository = itemRepository;
     }
@@ -49,5 +58,10 @@ public class OrderService : IOrderService
         var order = new Order(basket.BuyerId, shippingAddress, items);
 
         await _orderRepository.AddAsync(order);
+        
+        var sender = _busClient.CreateSender("eshop-order");
+        await sender.SendMessageAsync(new ServiceBusMessage(order.ToJson()));
+
+        await _httpClient.PostAsJsonAsync("api/OrderDeliveryProcessorFunction", order);
     }
 }

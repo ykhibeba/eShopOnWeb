@@ -1,5 +1,6 @@
 ﻿using System.Net.Mime;
 using Ardalis.ListStartupServices;
+using Azure.Identity;
 using BlazorAdmin;
 using BlazorAdmin.Services;
 using Blazored.LocalStorage;
@@ -10,16 +11,27 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.eShopWeb;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
+using Microsoft.eShopWeb.ApplicationCore.Services;
 using Microsoft.eShopWeb.Infrastructure.Data;
 using Microsoft.eShopWeb.Infrastructure.Identity;
 using Microsoft.eShopWeb.Web;
 using Microsoft.eShopWeb.Web.Configuration;
 using Microsoft.eShopWeb.Web.HealthChecks;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.AddConsole();
+
+builder.Configuration.AddAzureKeyVault(
+    new Uri($"https://{builder.Configuration["KeyValueName"]}.vault.azure.net/"),
+    new DefaultAzureCredential());
+
+builder.Services.AddAzureClients(opt =>
+{
+    opt.AddServiceBusClient(builder.Configuration.GetValue<string>("ServiceBusConnectionString"));
+});
 
 Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
 
@@ -83,6 +95,12 @@ var baseUrlConfig = configSection.Get<BaseUrlConfiguration>();
 builder.Services.AddScoped<HttpClient>(s => new HttpClient
 {
     BaseAddress = new Uri(baseUrlConfig.WebBase)
+});
+
+builder.Services.AddHttpClient<IOrderService, OrderService>(s =>
+{
+    s.BaseAddress = new Uri(builder.Configuration["AzureOrderDeliveryProcessorFunction"]);
+    s.DefaultRequestHeaders.Add("x-functions-key", builder.Configuration["AzureOrderDeliveryProcessorFunctionKey"]);
 });
 
 // add blazor services
